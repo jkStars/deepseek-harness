@@ -8,6 +8,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { apply, EVENTS_ENDPOINT, inject } from '../src/client/index.ts'
 
+// The app declares __DSH_BOOT__ on the window contract of the modules package;
+// the test window needs the same shape to author the boot manifest it compares
+// against.
+declare global {
+  interface Window {
+    __DSH_BOOT__?: { rev?: string; entries?: unknown[] }
+  }
+}
+
 class FakeEventSource {
   static instances: FakeEventSource[] = []
   readonly listeners = new Map<string, Set<(event: MessageEvent<string>) => void>>()
