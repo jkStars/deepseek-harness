@@ -86,7 +86,7 @@ vendored Loader 经其 `internal` 约定消费模块系统——唯一调用点�
 
 热重载是一项组合决策：web 组合包无条件挂载 `client-hmr` 行（一个常规的插件包），其 node 半带来 bundle 监视与 SSE（Server-Sent Events）通道；没有重建 watcher 改写客户端 bundle 时链路保持空闲。不应暴露它的组合可以禁用该行。
 
-重建好的 bundle 怎么变成重载信号？hmr 的 node 半自己观察——没有构建器来通知它。它从 `ctx.clientModules.clientPath(id)` 读取图上各行的 bundle 路径，由 HMR 自持的单个定时器对当前图上的每一行做 stat 轮询。新增图行时，顺序固定为先同步取得 stat 基线，再立即调用 `clientModuleHost.rebuilt(id)`：在模块 host 算出图哈希之后、取得基线之前发生的写入会被这次立即重哈希捕获；取得基线之后发生的写入则会留下 stat 差异，供下一次轮询捕获。这避开了 `fs.watchFile`：它以异步首次 stat 建立基线，可能把构造期间的重建静默吸收进基线。监视集合的成员随 `onGraphChanged` 更新；消失的行撤下监视，轮询时缺失的 bundle 则让对应行保持标脏状态，文件重现时即使元数据相同也强制重哈希。mtime/size 变化或行处于标脏状态时，`clientModuleHost.rebuilt(id)` 是重哈希的唯一入口；当 `rev` 真的变了，node 半才在 `GET /plugins/events` 上广播 `rebuilt` 帧——这是一条系统级 SSE 通道，连接即发全量图，变更时发 `rebuilt` 帧，仅供呈现的 wire，永不进会话日志。轮询是刻意选择：inotify 在 weka 网络挂载上不触发，构建侧监视器需要 `--poll` 也是同一原因；轮询间隔是一个经校验的配置字段（默认 500ms），dispose（资源释放）会清掉那一个定时器。重建 bundle 则是任意一个 tsdown watch 进程的事——`scripts/dev-web.ts` 仍作为 watch 构建入口保留，其包清单在启动时扫描 `packages/*/*/package.json` 按 dsh.client 发现——构建器与 host 共享零协议。写一半的 bundle 被撕裂读取会自愈：写入完成期间 stat 持续变化，下一个轮询节拍会再次重哈希并广播最终的 rev。
+重建好的 bundle 怎么变成重载信号？hmr 的 node 半自己观察——没有构建器来通知它。它从 `ctx.clientModules.clientPath(id)` 读取图上各行的 bundle 路径，由 HMR 自持的单个定时器对当前图上的每一行做 stat 轮询。新增图行时，顺序固定为先同步取得 stat 基线，再立即调用 `clientModuleHost.rebuilt(id)`：在模块 host 算出图哈希之后、取得基线之前发生的写入会被这次立即重哈希捕获；取得基线之后发生的写入则会留下 stat 差异，供下一次轮询捕获。这避开了 `fs.watchFile`：它以异步首次 stat 建立基线，可能把构造期间的重建静默吸收进基线。监视集合的成员随 `onGraphChanged` 更新；消失的行撤下监视，轮询时缺失的 bundle 则让对应行保持标脏状态，文件重现时即使元数据相同也强制重哈希。mtime/size 变化或行处于标脏状态时，`clientModuleHost.rebuilt(id)` 是重哈希的唯一入口；当 `rev` 真的变了，node 半才在 `GET /plugins/events` 上广播 `rebuilt` 帧——这是一条系统级 SSE 通道，连接即发全量图，变更时发 `rebuilt` 帧并广播此后每一次图变更（`dsh plugin add/remove` 经 profile-manifest 监听在运行中重挂载行），仅供呈现的 wire，永不进会话日志。轮询是刻意选择：inotify 在 weka 网络挂载上不触发，构建侧监视器需要 `--poll` 也是同一原因；轮询间隔是一个经校验的配置字段（默认 500ms），dispose（资源释放）会清掉那一个定时器。重建 bundle 则是任意一个 tsdown watch 进程的事——`scripts/dev-web.ts` 仍作为 watch 构建入口保留，其包清单在启动时扫描 `packages/*/*/package.json` 按 dsh.client 发现——构建器与 host 共享零协议。写一半的 bundle 被撕裂读取会自愈：写入完成期间 stat 持续变化，下一个轮询节拍会再次重哈希并广播最终的 rev。
 
 浏览器侧，驱动插件每帧重载一个插件，串行执行：
 
@@ -100,7 +100,7 @@ vendored Loader 经其 `internal` 约定消费模块系统——唯一调用点�
 
 每个插件都共享同一套语义；`immediately` 行的重载与 lazy 行分毫不差。依赖级联不花一行 client 代码：fiber 的激活纪元串接着它各服务提供方的 uid，因此换掉提供方的 fiber，每个依赖方都会经 cordis 本身重新装载。重载 connection 或 runtime 会级联整个 UI——正确，虽然重。
 
-支持边界，如实陈述。重载粒度刻意做粗：全新 fiber、全新组件、React 状态丢失、数据层不动——react-refresh 级的状态保留与「重执行 bundle 即重跑工厂」相冲突，属刻意不做。普通包（react 家族、壳内核、尚未升格的库）不是 entry：改它们意味着壳重建加整页刷新。v1 不做回滚：import 失败让 entry 失去 fiber，下一个 rebuilt 帧从头重试；apply 失败留下 FAILED fiber 交给状态投影；两者都大声记录。自我重载可行——在途的重载在旧 bundle 的闭包里跑完，新的 apply 再开一条新 SSE 通道——但空窗期到达的帧会丢失，下次重建会再次通知。一处已知的仅限 dev 竞态：rebuilt 帧与仍在途的 boot 到达重叠时共享那次到达的任务，可能物化重建前的字节；下一帧自愈。
+支持边界，如实陈述。重载粒度刻意做粗：全新 fiber、全新组件、React 状态丢失、数据层不动——react-refresh 级的状态保留与「重执行 bundle 即重跑工厂」相冲突，属刻意不做。普通包（react 家族、壳内核、尚未升格的库）不是 entry：改它们意味着壳重建加整页刷新。插件集合变更同样是整页刷新而非热换：rev 变化的图帧会带来启动清单从未包含过的行，因此浏览器侧执行一次 `location.reload()`（新页面携带的 manifest 带有新 rev，不会循环）而不是尝试热换。v1 不做回滚：import 失败让 entry 失去 fiber，下一个 rebuilt 帧从头重试；apply 失败留下 FAILED fiber 交给状态投影；两者都大声记录。自我重载可行——在途的重载在旧 bundle 的闭包里跑完，新的 apply 再开一条新 SSE 通道——但空窗期到达的帧会丢失，下次重建会再次通知。一处已知的仅限 dev 竞态：rebuilt 帧与仍在途的 boot 到达重叠时共享那次到达的任务，可能物化重建前的字节；下一帧自愈。
 
 ## 包盘点（现状 → 长期）
 

@@ -60,6 +60,13 @@
  * Failure policy: no rollback. An import failure leaves the entry
  * fiberless (the next rebuilt frame retries from scratch); an apply failure
  * leaves a FAILED fiber for the shell's status projection. Both log loudly.
+ *
+ * Graph reload: a `graph` frame whose rev differs from the page's boot
+ * manifest means the plugin set changed (a live `dsh plugin add/remove`
+ * mounted or unmounted rows the boot manifest never named — such rows cannot
+ * hot-swap, only reload). The browser turns that into one debounced
+ * `location.reload()`; the fresh page carries the new boot manifest, whose
+ * rev matches the next connect-time snapshot, so the reload cannot loop.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Entry, Loader } from '@deepseek-ai/cordis-plugin-loader'
@@ -100,6 +107,12 @@ export function apply(ctx: Context): void {
   // client module loader package, `loader` from the vendored Loader).
   const modLoader = ctx.modules
   const loader: Loader = ctx.loader
+
+  // The rev this page booted with; a graph frame naming any other rev means
+  // the plugin set changed after boot. Captured once — the manifest is a
+  // boot-time constant, replaced wholesale by the reload that follows.
+  const bootRev = (globalThis as { __DSH_BOOT__?: { rev?: string } }).__DSH_BOOT__?.rev
+  let reloading = false
 
   async function reload(id: string): Promise<void> {
     const entry = findEntry(loader, id)
@@ -151,10 +164,10 @@ export function apply(ctx: Context): void {
         })
         break
       case 'graph':
-        // Connect-time snapshot, unused. The loader's cached graph rev
-        // goes stale after rebuilds — harmless, since prefetch hits the
-        // network anyway (host serves bundles no-cache); graph rev refresh
-        // lands with the reconnect-handshake mechanism.
+        if (reloading || bootRev === undefined || frame.graph.rev === bootRev) break
+        reloading = true
+        ctx.logger.info(`client-hmr: plugin graph changed ${bootRev} → ${frame.graph.rev}; reloading`)
+        location.reload()
         break
       default:
         // Merge-extensible frame union: unknown frame types from newer hosts

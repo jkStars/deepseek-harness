@@ -2,8 +2,9 @@
  * Shared profile boot for every `dsh` surface: resolve the profile, stack its
  * patch layers (bundle layers in `dsh.profile.bundles` order, the profile's
  * own `cordis.patch.yml`, `--patch` overlays, the telemetry switch), mount the
- * tree over the profile's empty root config, keep the profile patch layer
- * live, and wire fail-loud plus bounded shutdown.
+ * tree over the profile's empty root config, keep the profile patch layer and
+ * the profile manifest (live `dsh plugin add/remove`) live, and wire fail-loud
+ * plus bounded shutdown.
  *
  * App flags are not the launcher's business: the invocation's inner arguments
  * are provided to the tree through `ctx.cmdlineArgs`, where any injected app
@@ -26,6 +27,9 @@ import {
   loadOverlayPatches,
   loadProfile,
   PROFILE_PATCH_FILENAME,
+  readProfileManifest,
+  resolveProfileLiveStack,
+  watchProfileManifest,
   watchUserPatches,
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
@@ -237,12 +241,19 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // objects in place. Reusing one parsed patch object across applications
   // would bake a user override into the bundle's in-memory insert row, so
   // removing the override could never revert the row to the bundle default.
-  const composeLive = (): PatchOptions[] => structuredClone([
-    ...composed.bundlePatches,
-    ...loadOptionalPatches(NAME, composed.profile.patchPath) ?? [],
-    ...loadOptionalPatches(NAME, homePatchPath()) ?? [],
-    ...composed.overlays,
-  ])
+  // The bundle half is re-read live (never the boot snapshot): a live
+  // `dsh plugin add/remove` changes dsh.profile.bundles mid-run, and every
+  // watcher must land the same full stack. Unresolvable listed bundles are
+  // the pnpm install race — surfaced as BundlePendingError for bounded retry
+  // by the manifest watcher and as a loud config-HMR failure from the
+  // patch-file watchers.
+  const resolveLiveStack = (): PatchOptions[] => resolveProfileLiveStack({
+    binName: NAME,
+    name: options.profile,
+    installAnchor: INSTALL_ANCHOR,
+    overlays: composed.overlays,
+  })
+  const composeLive = (): PatchOptions[] => resolveLiveStack()
   // Cloned for the same insert-aliasing reason as composeLive: the boot
   // application must not mutate the objects later reloads recompose from.
   const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), (hostCtx) => {
@@ -291,6 +302,18 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
         binName: NAME,
         filename: homePatchPath(),
         compose: composeLive,
+      })
+      // Live `dsh plugin add/remove`: the profile manifest (package.json) is
+      // the plugin-set write surface. A bundle-list change re-resolves the
+      // full stack (pnpm-install race retried as BundlePendingError) and lands
+      // through the same transactional reapply as the patch-file watchers, so
+      // bundle rows mount and unmount without restarting this surface.
+      await watchProfileManifest(ctx, {
+        binName: NAME,
+        manifestPath: join(composed.profile.dir, 'package.json'),
+        currentBundles: composed.profile.layers.map(layer => layer.packageName),
+        readBundles: () => readProfileManifest(NAME, composed.profile.dir).dsh?.profile?.bundles ?? [],
+        resolveStack: resolveLiveStack,
       })
     } catch (error) {
       suppressShutdownError(ctx, signalShutdown.signal, error)

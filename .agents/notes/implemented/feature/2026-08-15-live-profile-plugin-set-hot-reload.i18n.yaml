@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-15-live-profile-plugin-set-hot-reload.md
+2026-08-15-live-profile-plugin-set-hot-reload.md: e605e0bd3a2920811cab779c6716d035d6cb2c46
+2026-08-15-live-profile-plugin-set-hot-reload.zh.md: c7a5e031b4d48d25580f8cf12ed3f1bf7e8a1314

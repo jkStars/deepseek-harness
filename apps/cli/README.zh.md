@@ -38,6 +38,8 @@ profile 目录包含一个 `package.json`，其中记录树外插件依赖，以
 
 `dsh.profile.bundles` 中列出的组合包先从 dsh 安装目录解析（`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`@deepseek-ai/dsh-headless`），再从 profile 自身的 `node_modules` 解析；pnpm 会将树外插件安装到该目录。
 
+在长期运行的 surface 上（`dsh web`、`dsh --profile headless`），`dsh plugin add` 和 `dsh plugin remove` 会**即时生效**：运行中的 surface 监听 profile manifest，并事务性地挂载／卸载对应组合包行——新插件的主机命令立即可用，Web 页面会自动刷新一次，使新插件的 UI 出现。插件集合变更无需重启；但已列入 `dsh.profile.bundles` 的包做版本更新（`dsh plugin update`）时，运行中的主机代码要等重启后才生效（更新后版本包的客户端部分仍会经 client-HMR 轮询热替换）。
+
 使用 `--dump-default-config` 和 `--dump-config` 可在不启动的情况下检查组合后的配置树。
 
 层的确切优先级、flag、关闭行为、部署默认值和源码执行方式，以 [CLI（命令行界面）行为参考](reference/README.md)为准。

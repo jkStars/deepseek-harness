@@ -38,6 +38,8 @@ The tree composes over an empty root:
 
 Bundles named in `dsh.profile.bundles` resolve from the dsh installation first (`@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, `@deepseek-ai/dsh-headless`), then from the profile's own `node_modules`, where pnpm installs out-of-tree plugins.
 
+On long-lived surfaces (`dsh web`, `dsh --profile headless`), `dsh plugin add` and `dsh plugin remove` apply **live**: the running surface watches the profile manifest and transactionally remounts/unmounts the bundle rows — host commands from the new plugin work immediately, and the web page reloads once so the new plugin's UI appears. No restart is needed for a plugin-set change; a version update of an already-listed bundle (`dsh plugin update`) keeps the running host code until restart (the client half of a versioned bundle still hot-swaps through the client-HMR poll).
+
 Use `--dump-default-config` and `--dump-config` to inspect the composed tree without booting it.
 
 The [CLI behavior reference](reference/README.md) owns exact layer precedence, flags, shutdown behavior, deployment defaults, and source execution.

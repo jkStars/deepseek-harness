@@ -5,6 +5,7 @@
 import { mkdtempSync, rmSync, statSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WebBootGraph, ClientModuleRegistry } from '@deepseek-ai/dsh-client-modules'
@@ -182,6 +183,38 @@ describe('hmr node half', () => {
     })
     await vi.waitFor(() => { expect(clientModuleHost.rebuiltCalls).toEqual(['pkg-a']) }, { timeout: 3_000 })
     await fiber.dispose()
+  })
+
+  it('broadcasts a graph frame to connected clients when the graph changes', async () => {
+    const bundle = join(dir, 'graph.js')
+    writeFileSync(bundle, 'v1')
+    const rows = new Map([['pkg-a', bundle]])
+    const clientModuleHost = fakeClientModuleHost(rows)
+    const routes: WebRoute[] = []
+    const fiber = await mount(clientModuleHost, fakeHttpServer(routes))
+
+    const writes: string[] = []
+    const res = {
+      writeHead: () => {},
+      write: (chunk: string) => { writes.push(chunk); return true },
+      on: () => {},
+      once: () => {},
+      destroy: () => {},
+    } as unknown as ServerResponse
+    const handler = routes.find(route => route.kind === 'exact' && route.path === EVENTS_ENDPOINT)?.handler
+    expect(handler).toBeDefined()
+    void handler!({ method: 'GET' } as IncomingMessage, res)
+    const graphFrames = () => writes.filter(chunk => chunk.includes('"type":"graph"')).length
+    expect(graphFrames()).toBe(1) // connect-time snapshot
+
+    rows.delete('pkg-a')
+    clientModuleHost.fireGraphChanged()
+    expect(graphFrames()).toBe(2) // live broadcast carries the new graph
+    expect(writes.join('')).toContain('"rev":"r"')
+
+    await fiber.dispose()
+    // Disposal destroys the connection; further graph changes reach nobody.
+    expect(writes.join('')).toContain(': connected')
   })
 
   it('retains a dirty baseline when the immediate re-hash races a rename', async () => {

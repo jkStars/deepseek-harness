@@ -49,6 +49,14 @@ export {
   type ProfileManifest,
 } from './profile.ts'
 
+export {
+  BundlePendingError,
+  resolveProfileLiveStack,
+  watchProfileManifest,
+  type LiveProfileStackOptions,
+  type ProfileManifestWatchOptions,
+} from './manifest-watch.ts'
+
 /**
  * Resolve the config to boot. Replay swaps a `cordis.yml` basename for
  * `cordis.snapshot.yml` in the same directory; every other mode keeps the path.
@@ -223,6 +231,41 @@ export interface UserPatchWatchOptions {
 }
 
 /**
+ * Resolve the boot's root Include entry, or throw when the tree has none.
+ * @param ctx - settled app context containing the root Include.
+ * @returns the root Include entry.
+ */
+export function resolveRootInclude(ctx: Context): Entry {
+  const entry = bootstrapIncludes.get(ctx)
+  if (entry === undefined) throw new Error('dsh-app-boot: requires the root Include entry')
+  return entry
+}
+
+/**
+ * Re-apply a full patch stack to the boot's root Include: re-read the
+ * include's non-patch options and swap its `patches`, so the include
+ * transactionally reapplies the stack over the base entry list. Shared by the
+ * user patch-layer watcher and the live profile-manifest watcher — both
+ * recompose the whole stack on their own trigger and land through this one
+ * transactional path.
+ * @param ctx - settled app context containing the root Include.
+ * @param patches - the new patch stack, in application order.
+ */
+export async function reapplyRootInclude(ctx: Context, patches: readonly PatchOptions[]): Promise<void> {
+  const entry = resolveRootInclude(ctx)
+  // Re-read the include's non-patch options per refresh: a writer that
+  // updates the root Include's other options between refreshes (none exists
+  // today) must not have them silently reverted by a reload.
+  const { patches: _previousPatches, ...includeConfig } = entry.options.config as Include.Config
+  await entry.update({
+    config: {
+      ...includeConfig,
+      patches,
+    },
+  })
+}
+
+/**
  * Watch the user patch layer through Cordis HMR and transactionally reapply it to the boot include.
  * @param ctx - settled app context containing the root Include and an active HMR service.
  * @param options - diagnostic, file, and patch-composition inputs.
@@ -236,21 +279,10 @@ export async function watchUserPatches(
   const { binName, filename, compose = (patches: PatchOptions[]) => patches } = options
   const hmr = ctx.get('hmr')
   if (hmr === undefined) throw new Error(`${binName}: user patch-layer watching requires the Cordis HMR service`)
-  const entry = bootstrapIncludes.get(ctx)
-  if (entry === undefined) throw new Error(`${binName}: user patch-layer watching requires the root Include entry`)
+  resolveRootInclude(ctx)
   const register = hmr.registerConfig(filename, async () => {
-    // Re-read the include's non-patch options per refresh: a writer that
-    // updates the root Include's other options between refreshes (none exists
-    // today) must not have them silently reverted by a user-layer reload.
-    const { patches: _previousPatches, ...includeConfig } = entry.options.config as Include.Config
     const userPatches = loadOptionalPatches(binName, filename) ?? []
-    const patches = compose(userPatches)
-    await entry.update({
-      config: {
-        ...includeConfig,
-        patches,
-      },
-    })
+    await reapplyRootInclude(ctx, compose(userPatches))
   })
   try {
     return await register
