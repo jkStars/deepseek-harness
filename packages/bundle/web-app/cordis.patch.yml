@@ -84,6 +84,10 @@
     - id: session-stats
       name: '@deepseek-ai/dsh-session-stats'
 
+    # Token-usage dashboard page + JSON feed over the webserver routes.
+    - id: token-usage-stats-web
+      name: '@deepseek-ai/dsh-token-usage-stats-web'
+
     # Resolve bind host, SSH launch, and display once at boot, then mount the
     # matching dual-face directory picker. Mount -native or -browse directly in
     # an overlay to pin the interaction.
@@ -272,6 +276,10 @@
 
     - id: ui-trajectory
       name: '@deepseek-ai/dsh-client-ui-trajectory'
+
+    # Sidebar footer link opening the host-served token usage dashboard.
+    - id: ui-token-usage-stats
+      name: '@deepseek-ai/dsh-client-ui-token-usage-stats'
 
 # ── the agent plane moves behind agent presets ─────────────────────────────
 #
