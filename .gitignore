@@ -38,3 +38,12 @@ apps/web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+
+# harness runtime data and local scratch
+.dsh/
+.npm-cache-tmp/
+__pycache__/
+dist/
+bin/
+build/
+out/
