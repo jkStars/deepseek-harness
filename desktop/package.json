@@ -1,0 +1,44 @@
+{
+  "name": "dsh-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Double-click desktop shell for DeepSeek Harness: boots dsh web and runs the GUI in a native Electron window.",
+  "author": "DeepSeek Harness",
+  "main": "main.js",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --win portable",
+    "pack:dir": "electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": ">=42.0.0 <45",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "ai.deepseek.harness.desktop",
+    "productName": "DeepSeek Harness",
+    "files": [
+      "main.js",
+      "server.js",
+      "splash.html",
+      "favicon.png",
+      "config.json.example"
+    ],
+    "win": {
+      "icon": "favicon.png",
+      "target": [
+        "portable"
+      ]
+    },
+    "portable": {
+      "artifactName": "DeepSeek Harness.exe"
+    },
+    "directories": {
+      "output": "dist"
+    }
+  }
+}
