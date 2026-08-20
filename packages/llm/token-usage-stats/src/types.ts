@@ -44,7 +44,11 @@ export interface UsageTotals {
   readonly outputTokens: number
   /** Sum of the four disjoint token buckets. */
   readonly totalTokens: number
-  /** Optional computed cost; absent when no pricing entry covers a contributing model. */
+  /**
+   * Computed cost; absent when any contributing usage record's model has no
+   * pricing entry. A partially priced scope never reports a partial sum as the
+   * full cost.
+   */
   readonly cost?: number
 }
 

@@ -63,6 +63,15 @@ const PRICING_KEYS = new Set([
   'outputPerMillion',
 ])
 
+/**
+ * Upper bound on series buckets. Guards the unauthenticated API against
+ * range amplification (`from=0&granularity=hour` alone would allocate ~496k
+ * buckets from epoch). Hourly buckets cover ~13 months and daily ~27 years,
+ * so legitimate dashboard ranges stay under the cap; an explicit or implied
+ * wider range is rejected as a query error.
+ */
+const MAX_SERIES_BUCKETS = 10_000
+
 function isNonNegativeFinite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
 }
@@ -193,6 +202,9 @@ export class TokenUsageStats extends Service {
    * Return a detached immutable analytics snapshot.
    * @param query - optional time/model/granularity filters.
    * @returns aggregate totals, per-model totals, and time-bucketed series.
+   * @throws RangeError when the filtered series range would exceed the
+   *   {@link MAX_SERIES_BUCKETS} bucket cap (an explicit from/to spanning too
+   *   wide, or records so far apart they imply more buckets than the cap).
    */
   snapshot(query: TokenUsageStatsQuery = {}): TokenUsageStatsSnapshot {
     const from = query.from
@@ -247,12 +259,22 @@ export class TokenUsageStats extends Service {
       const id = snapshot.header.id
       if (this.ctx.sessions.get(id) !== undefined) continue
       const inspection = await sessionPersistence.inspect(id)
+      // Publish the replay cursor before folding: a session may have been
+      // opened while inspect() was in flight, and its live `_sync` starts from
+      // the persisted cursor. If that live fold already consumed the whole log
+      // (it ran before the cursor existed and folded from zero), replaying the
+      // same events would double count them.
+      this.persistedSeq.set(id, inspection.events.length)
+      const live = this.ctx.sessions.get(id)
+      if (live !== undefined) {
+        const liveState = this.states.get(live)
+        if (liveState !== undefined && liveState.consumedEvents >= inspection.events.length) continue
+      }
       const state: SessionState = { consumedEvents: 0, provider: undefined, model: undefined }
       for (const event of inspection.events) {
         this._foldEvent(id, state, event)
         state.consumedEvents += 1
       }
-      this.persistedSeq.set(id, inspection.events.length)
     }
   }
 
@@ -354,19 +376,23 @@ export class TokenUsageStats extends Service {
       totalTokens: 0,
     }
     let cost: number | undefined
+    let allPriced = true
     for (const record of usageRecords) {
       totals.uncachedInputTokens += record.usage.inputTokens
       totals.cacheReadTokens += record.usage.cacheReadTokens ?? 0
       totals.cacheWriteTokens += record.usage.cacheWriteTokens ?? 0
       totals.outputTokens += record.usage.outputTokens
       const recordCost = this._costFor(record.model, record.usage)
-      if (recordCost !== undefined) cost = (cost ?? 0) + recordCost
+      if (recordCost === undefined) allPriced = false
+      else cost = (cost ?? 0) + recordCost
     }
     totals.totalTokens = totals.uncachedInputTokens
       + totals.cacheReadTokens
       + totals.cacheWriteTokens
       + totals.outputTokens
-    if (cost !== undefined) totals.cost = cost
+    // Report cost only when every contributing model has a pricing entry;
+    // a partially priced scope must not present a partial sum as the full cost.
+    if (cost !== undefined && allPriced) totals.cost = cost
     return totals
   }
 
@@ -427,6 +453,11 @@ export class TokenUsageStats extends Service {
     const bucketSize = granularity === 'day' ? 86_400_000 : 3_600_000
     const firstStart = startOfBucket(start, granularity)
     const bucketCount = Math.max(1, Math.floor((end - firstStart) / bucketSize) + 1)
+    if (bucketCount > MAX_SERIES_BUCKETS) {
+      throw new RangeError(
+        `token usage stats: series range spans ${bucketCount} ${granularity} buckets, exceeding the ${MAX_SERIES_BUCKETS} bucket limit (narrow the from/to range or choose a coarser granularity)`,
+      )
+    }
     const buckets = Array.from({ length: bucketCount }, (_, index) => ({
       startTime: firstStart + index * bucketSize,
       usageRecords: [] as UsageRecord[],

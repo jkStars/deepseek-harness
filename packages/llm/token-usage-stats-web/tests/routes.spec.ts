@@ -39,4 +39,20 @@ describe('token usage stats web routes', () => {
     expect(html).toContain('Token 用量统计')
     expect(html).toContain('/api/token-usage-stats')
   })
+
+  it('answers 400 for a series range beyond the bucket cap', async () => {
+    const { ctx, base } = await boot()
+    // Give the service records so the series is actually materialized; an
+    // empty snapshot short-circuits before the bucket-cap check.
+    const session = ctx.sessions.create()
+    session.append('request/header', {
+      header: { config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } },
+      reason: 'initial',
+    })
+    const response = await fetch(`${base}/api/token-usage-stats?from=0&granularity=hour`)
+    expect(response.status).toBe(400)
+    expect(response.headers.get('content-type')).toContain('application/json')
+    const body = (await response.json()) as { error: string }
+    expect(body.error).toMatch(/bucket limit/)
+  })
 })

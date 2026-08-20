@@ -66,7 +66,11 @@ Query options:
   usage chunk followed by a final message is never double counted.
 - **Time buckets** use the event timestamp in UTC.
 - **Cost** is computed from configured per-model pricing only when a pricing
-  entry exists for every contributing model in that scope.
+  entry exists for every contributing model in that scope; a partially priced
+  scope reports no cost rather than a partial sum.
+- **Series are bounded** — a snapshot whose hour/day range would need more than
+  10,000 buckets is rejected with a `RangeError` (the API route answers 400), so
+  an unbounded `from=0` cannot amplify into hundreds of thousands of buckets.
 
 ## Model Experience
 

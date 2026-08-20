@@ -82,7 +82,19 @@ export function apply(ctx: Context): void {
         // node:http always sets url on server requests; `?? '/'` keeps the
         // fallback valid for the optional IncomingMessage.url type.
         const url = new URL(req.url ?? '/', 'http://x')
-        const snapshot = ctx.tokenUsageStats.snapshot(parseTokenUsageStatsQuery(url.searchParams))
+        let snapshot
+        try {
+          snapshot = ctx.tokenUsageStats.snapshot(parseTokenUsageStatsQuery(url.searchParams))
+        } catch (error) {
+          // A rejected series range (e.g. from/to spanning more than the bucket
+          // cap) is a client query error, not a server fault.
+          res.writeHead(400, {
+            'content-type': 'application/json; charset=utf-8',
+            'cache-control': 'no-store',
+          })
+          res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))
+          return
+        }
         res.writeHead(200, {
           'content-type': 'application/json; charset=utf-8',
           'cache-control': 'no-store',

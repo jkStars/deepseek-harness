@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createMessage } from '@deepseek-ai/dsh-llm'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
-import SessionStore, { canonicalHeader } from '@deepseek-ai/dsh-session'
-import type { Session } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, canonicalHeader } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SessionInspection, SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import TokenUsageStats from '@deepseek-ai/dsh-token-usage-stats'
 import type { TokenUsageStatsConfig } from '@deepseek-ai/dsh-token-usage-stats'
 
@@ -182,5 +183,120 @@ describe('TokenUsageStats', () => {
   it('rejects unknown configuration keys', async () => {
     await expect(harness({ unknown: true } as unknown as TokenUsageStatsConfig))
       .rejects.toThrow('TokenUsageStatsConfig: unknown key "unknown"')
+  })
+
+  it('omits cost when any contributing model lacks a pricing entry', async () => {
+    const { ctx, session } = await harness({
+      currency: 'CNY',
+      pricing: { 'deepseek-v4-flash': { outputPerMillion: 2 } },
+    })
+    // Step 1 runs on the priced model.
+    startStep(session, 1, 1)
+    appendHeader(session, 'deepseek-official', 'deepseek-v4-flash')
+    appendFinalUsage(session, {
+      inputTokens: 100,
+      outputTokens: 20,
+    }, 'deepseek-official', 'deepseek-v4-flash', 1, 1)
+    // Step 2 runs on an unpriced model.
+    startStep(session, 2, 1)
+    appendHeader(session, 'deepseek-official', 'deepseek-v4-pro')
+    appendFinalUsage(session, {
+      inputTokens: 50,
+      outputTokens: 10,
+    }, 'deepseek-official', 'deepseek-v4-pro', 2, 1)
+
+    const snapshot = ctx.tokenUsageStats.snapshot()
+    // A partially priced scope must not present a partial sum as the full cost.
+    expect(snapshot.totals.cost).toBeUndefined()
+    // The priced model keeps its own cost; the unpriced one stays absent.
+    expect(snapshot.models.find(model => model.model === 'deepseek-v4-flash')?.totals.cost)
+      .toBeCloseTo(20 * 2 / 1_000_000, 12)
+    expect(snapshot.models.find(model => model.model === 'deepseek-v4-pro')?.totals.cost)
+      .toBeUndefined()
+  })
+
+  it('rejects series ranges wider than the bucket cap', async () => {
+    const { ctx, session } = await harness()
+    startStep(session, 1, 1)
+    appendHeader(session, 'deepseek-official', 'deepseek-v4-flash')
+    appendFinalUsage(session, {
+      inputTokens: 100,
+      outputTokens: 20,
+    }, 'deepseek-official', 'deepseek-v4-flash', 1, 1)
+
+    // from=0 spans ~496k hourly buckets to 2026, far beyond the 10k cap.
+    expect(() => ctx.tokenUsageStats.snapshot({ from: 0, granularity: 'hour' }))
+      .toThrow(RangeError)
+    expect(() => ctx.tokenUsageStats.snapshot({ from: 0, granularity: 'hour' }))
+      .toThrow(/bucket limit/)
+  })
+
+  it('does not double count a session opened while rehydration is in flight', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+
+    const id = SessionId('race-session')
+    let releaseInspect: () => void = () => {}
+    const inspectGate = new Promise<void>((resolve) => { releaseInspect = resolve })
+    let inspectCalled = false
+    // The persisted log mirrors what the live session below appends: one
+    // request/header plus the finalized assistant message usage.
+    const persistedEvents: SessionEvent[] = [
+      {
+        type: 'request/header',
+        seq: 1,
+        time: 1,
+        data: {
+          header: canonicalHeader({ config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } }),
+          reason: 'initial',
+        },
+      },
+      {
+        type: 'assistant/message',
+        seq: 2,
+        time: 2,
+        data: {
+          turn: 1,
+          step: 1,
+          message: createMessage({
+            role: 'assistant',
+            content: [],
+            source: { kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+          }),
+          usage: { inputTokens: 100, outputTokens: 20 },
+        },
+      },
+    ]
+    const persistence = {
+      listSnapshots: async () => [{ header: { id, version: 0, createdAt: 1 }, revision: 'r1' }],
+      inspect: async (): Promise<SessionInspection> => {
+        inspectCalled = true
+        await inspectGate
+        return { meta: { id, version: 0, createdAt: 1 }, events: persistedEvents }
+      },
+    } as unknown as SessionPersistence
+    ctx.provide('sessionPersistence', persistence)
+
+    await ctx.plugin(TokenUsageStats)
+
+    // Wait until rehydration is parked on the inspect gate, then open the same
+    // session live and append the same events: its live fold starts from the
+    // (not yet published) cursor and counts everything from zero.
+    await vi.waitFor(() => { expect(inspectCalled).toBe(true) })
+    const session = ctx.sessions.create(id)
+    startStep(session, 1, 1)
+    appendHeader(session, 'deepseek-official', 'deepseek-v4-flash')
+    appendFinalUsage(session, {
+      inputTokens: 100,
+      outputTokens: 20,
+    }, 'deepseek-official', 'deepseek-v4-flash', 1, 1)
+
+    // Release the gate: rehydration resumes, sees the live session already
+    // consumed the same log, and must not fold the persisted copy again.
+    releaseInspect()
+    await vi.waitFor(() => {
+      expect(ctx.tokenUsageStats.snapshot().totals.requestCount).toBe(1)
+      expect(ctx.tokenUsageStats.snapshot().totals.totalTokens).toBe(120)
+    })
   })
 })
