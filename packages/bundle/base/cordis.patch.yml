@@ -281,22 +281,6 @@
     - id: token-meter
       name: '@deepseek-ai/dsh-token-meter'
 
-    - id: token-usage-stats
-      name: '@deepseek-ai/dsh-token-usage-stats'
-      config:
-        currency: CNY
-        pricing:
-          deepseek-v4-flash:
-            uncachedInputPerMillion: 1
-            cacheReadPerMillion: 0.02
-            cacheWritePerMillion: 0
-            outputPerMillion: 2
-          deepseek-v4-pro:
-            uncachedInputPerMillion: 3
-            cacheReadPerMillion: 0.025
-            cacheWritePerMillion: 0
-            outputPerMillion: 6
-
     - id: compaction-basic
       name: '@deepseek-ai/dsh-compaction-basic'
 

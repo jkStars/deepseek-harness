@@ -2050,19 +2050,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
-    key: 'tokenUsageStats',
-    summary: 'Replay-aware cross-session usage analytics service.',
-    description: 'Replay-aware cross-session usage analytics service.\n\nThe service observes `session/event`, replays already-live sessions on mount, and keeps per-step usage samples so a later final `assistant/message` replaces an earlier usage chunk instead of double counting. Request counts come from `request/header` events.',
-    methods: [
-      {
-        signature: 'snapshot(query: TokenUsageStatsQuery = {}): TokenUsageStatsSnapshot',
-        description: 'Return a detached immutable analytics snapshot.',
-        parameters: [{ name: 'query', description: 'optional time/model/granularity filters.' }],
-        returns: 'aggregate totals, per-model totals, and time-bucketed series.',
-      },
-    ],
-  },
-  {
     key: 'toolResultPruner',
     summary: 'Deterministic head/middle/tail pruning for current tool-result surface nodes.',
     description: 'Deterministic head/middle/tail pruning for current tool-result surface nodes.',
@@ -3811,10 +3798,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ModelModalityMap {\n    text: \'text\';\n    image: \'image\';\n}',
   },
   {
-    name: 'ModelUsage',
-    declaration: 'export interface ModelUsage {\n    readonly provider: string;\n    readonly model: string;\n    readonly totals: UsageTotals;\n}',
-  },
-  {
     name: 'ObjectJsonSchema',
     declaration: 'export type ObjectJsonSchema = JsonSchemaNode & {\n    type: \'object\';\n};',
   },
@@ -4763,14 +4746,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface TokenUsage {\n    inputTokens: number;\n    outputTokens: number;\n    cacheReadTokens?: number;\n    cacheWriteTokens?: number;\n    reasoningTokens?: number;\n}',
   },
   {
-    name: 'TokenUsageStatsQuery',
-    declaration: 'export interface TokenUsageStatsQuery {\n    readonly from?: number;\n    readonly to?: number;\n    readonly model?: string;\n    readonly granularity?: \'hour\' | \'day\';\n}',
-  },
-  {
-    name: 'TokenUsageStatsSnapshot',
-    declaration: 'export interface TokenUsageStatsSnapshot {\n    readonly currency?: string;\n    readonly totals: UsageTotals;\n    readonly models: readonly ModelUsage[];\n    readonly series: readonly UsageSeriesPoint[];\n}',
-  },
-  {
     name: 'ToolCallKind',
     declaration: 'export type ToolCallKind = \'read\' | \'edit\' | \'delete\' | \'move\' | \'search\' | \'execute\' | \'fetch\' | \'other\';',
   },
@@ -4953,14 +4928,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UpdateTeamTaskRequest',
     declaration: 'export interface UpdateTeamTaskRequest {\n    readonly taskId: TeamTaskId;\n    readonly expectedRevision: number;\n    readonly action: TeamTaskAction;\n    readonly subject?: string;\n    readonly description?: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n    readonly owner?: string;\n}',
-  },
-  {
-    name: 'UsageSeriesPoint',
-    declaration: 'export interface UsageSeriesPoint {\n    readonly startTime: number;\n    readonly endTime: number;\n    readonly totals: UsageTotals;\n}',
-  },
-  {
-    name: 'UsageTotals',
-    declaration: 'export interface UsageTotals {\n    readonly requestCount: number;\n    readonly uncachedInputTokens: number;\n    readonly cacheReadTokens: number;\n    readonly cacheWriteTokens: number;\n    readonly outputTokens: number;\n    readonly totalTokens: number;\n    readonly cost?: number;\n}',
   },
   {
     name: 'UserMessage',

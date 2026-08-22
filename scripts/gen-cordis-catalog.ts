@@ -105,7 +105,6 @@ export const SERVICE_PAGE: Record<string, string> = {
   sessionTelemetry: 'session-telemetry.md',
   agentTeams: 'agent-team.md',
   tokenMeter: 'token-meter.md',
-  tokenUsageStats: 'token-meter.md',
   toolResultPruner: 'compaction.md',
   tools: 'tools.md',
   typert: 'typert.md',

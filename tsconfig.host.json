@@ -134,8 +134,6 @@
     { "path": "./packages/attachment/attachment-local" },
     { "path": "./packages/llm/llm" },
     { "path": "./packages/llm/token-meter" },
-    { "path": "./packages/llm/token-usage-stats" },
-    { "path": "./packages/llm/token-usage-stats-web" },
     { "path": "./packages/core/session" },
     { "path": "./packages/core/scope" },
     { "path": "./packages/typert/protocol" },

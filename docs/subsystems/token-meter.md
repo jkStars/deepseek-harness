@@ -87,23 +87,4 @@ estimateMessage(message: Message): number
 Types: [EpochHeader](session.md) · [Message](llm-streaming.md) · [Session](session.md)
 
 Source: [`packages/llm/token-meter/src/index.ts`](../../packages/llm/token-meter/src/index.ts)
-
-<a id="ctxtokenusagestats--tokenusagestats"></a>
-
-### `ctx.tokenUsageStats` — `TokenUsageStats`
-
-Replay-aware cross-session usage analytics service.
-
-The service observes `session/event`, replays already-live sessions on mount, and keeps per-step usage samples so a later final `assistant/message` replaces an earlier usage chunk instead of double counting. Request counts come from `request/header` events.
-
-```ts cordis-catalog
-/**
- * Return a detached immutable analytics snapshot.
- * @param query - optional time/model/granularity filters.
- * @returns aggregate totals, per-model totals, and time-bucketed series.
- */
-snapshot(query: TokenUsageStatsQuery = {}): TokenUsageStatsSnapshot
-```
-
-Source: [`packages/llm/token-usage-stats/src/index.ts`](../../packages/llm/token-usage-stats/src/index.ts)
 <!-- END GENERATED cordis-surface -->
